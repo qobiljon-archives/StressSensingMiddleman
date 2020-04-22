@@ -50,45 +50,59 @@ public class SAPAndroidAgent extends SAAgentV2 {
                 String grpcHost = context.getString(R.string.grpc_host);
                 int grpcPort = Integer.parseInt(context.getString(R.string.grpc_port));
                 while (runThreads) {
-                    String email = prefs.getString("email", null);
-                    assert email != null;
-                    int userId = prefs.getInt("userId", -1);
-                    ManagedChannel channel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort).usePlaintext().build();
-                    ETServiceGrpc.ETServiceBlockingStub stub = ETServiceGrpc.newBlockingStub(channel);
-                    EtService.SubmitHeartbeatRequestMessage requestMessage = EtService.SubmitHeartbeatRequestMessage.newBuilder()
-                            .setUserId(userId)
-                            .setEmail(email)
-                            .build();
                     try {
-                        EtService.DefaultResponseMessage resultMessage = stub.submitHeartbeat(requestMessage);
-                        Log.e(TAG, "Heartbeat submission result : doneSuccessfully=" + resultMessage.getDoneSuccessfully());
-                    } catch (StatusRuntimeException e) {
-                        e.printStackTrace();
-                    } finally {
-                        channel.shutdown();
-                    }
-                    if (mProviderServiceSocket != null) {
-                        boolean sent = sendMessage(new byte[]{1});
-                        Log.e(TAG, "Request data from SmartWatch : " + sent);
-                    }
-                    try {
+                        String email = prefs.getString("email", null);
+                        assert email != null;
+                        int userId = prefs.getInt("userId", -1);
+                        ManagedChannel channel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort).usePlaintext().build();
+                        ETServiceGrpc.ETServiceBlockingStub stub = ETServiceGrpc.newBlockingStub(channel);
+                        EtService.SubmitHeartbeatRequestMessage requestMessage = EtService.SubmitHeartbeatRequestMessage.newBuilder()
+                                .setUserId(userId)
+                                .setEmail(email)
+                                .build();
+                        try {
+                            EtService.DefaultResponseMessage resultMessage = stub.submitHeartbeat(requestMessage);
+                            Log.e(TAG, "Heartbeat submission result : doneSuccessfully=" + resultMessage.getDoneSuccessfully());
+                        } catch (StatusRuntimeException e) {
+                            e.printStackTrace();
+                        } finally {
+                            channel.shutdown();
+                        }
                         Thread.sleep(20000);
+                    } catch (Exception e) {
+                        Log.e(TAG, "SAPAndroidAgent: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                }
+            }).start();
+
+            // requesting data
+            new Thread(() -> {
+                while (runThreads) {
+                    try {
+                        if (mProviderServiceSocket != null) {
+                            boolean sent = sendMessage(new byte[]{1});
+                            Log.e(TAG, "Request data from SmartWatch : " + sent);
+                        }
+                        Thread.sleep(90000);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
                 }
             }).start();
+
             // data submission thread
             new Thread(() -> {
                 SharedPreferences prefs = context.getApplicationContext().getSharedPreferences(getApplicationContext().getPackageName(), Context.MODE_PRIVATE);
                 String grpcHost = context.getString(R.string.grpc_host);
                 int grpcPort = Integer.parseInt(context.getString(R.string.grpc_port));
                 while (runThreads) {
-                    if (isConnectedToWifi()) {
-                        String email = prefs.getString("email", null);
-                        int userId = prefs.getInt("userId", -1);
-                        ManagedChannel channel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort).usePlaintext().build();
-                        ETServiceGrpc.ETServiceBlockingStub stub = ETServiceGrpc.newBlockingStub(channel);
+                    try {
+                        if (isConnectedToWifi()) {
+                            String email = prefs.getString("email", null);
+                            int userId = prefs.getInt("userId", -1);
+                            ManagedChannel channel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort).usePlaintext().build();
+                            ETServiceGrpc.ETServiceBlockingStub stub = ETServiceGrpc.newBlockingStub(channel);
 
                         /*val cursor = LocalDBManager.sensorData()
                         if (cursor != null && cursor.moveToFirst())
@@ -105,54 +119,53 @@ public class SAPAndroidAgent extends SAAgentV2 {
                                 if (result.doneSuccessfully)
                                     LocalDBManager.deleteRecord(cursor.getInt(cursor.getColumnIndex("id")))
                             } while (cursor.moveToNext())*/
-                        Cursor cursor = LocalDBManager.INSTANCE.sensorData();
-                        EtService.SubmitDataRecordsRequestMessage.Builder requestBuilder = EtService.SubmitDataRecordsRequestMessage.newBuilder()
-                                .setUserId(userId)
-                                .setEmail(email);
-                        ArrayList<Integer> ids = new ArrayList<>();
-                        if (cursor != null && cursor.moveToFirst())
-                            do {
-                                ids.add(cursor.getInt(cursor.getColumnIndex("id")));
-                                requestBuilder.addDataSource(cursor.getInt(cursor.getColumnIndex("dataSourceId")));
-                                requestBuilder.addTimestamp(cursor.getLong(cursor.getColumnIndex("timestamp")));
-                                requestBuilder.addValues(cursor.getString(cursor.getColumnIndex("data")));
-                                requestBuilder.addAccuracy(0.0f);
+                            Cursor cursor = LocalDBManager.INSTANCE.sensorData();
+                            EtService.SubmitDataRecordsRequestMessage.Builder requestBuilder = EtService.SubmitDataRecordsRequestMessage.newBuilder()
+                                    .setUserId(userId)
+                                    .setEmail(email);
+                            ArrayList<Integer> ids = new ArrayList<>();
+                            if (cursor != null && cursor.moveToFirst())
+                                do {
+                                    ids.add(cursor.getInt(cursor.getColumnIndex("id")));
+                                    requestBuilder.addDataSource(cursor.getInt(cursor.getColumnIndex("dataSourceId")));
+                                    requestBuilder.addTimestamp(cursor.getLong(cursor.getColumnIndex("timestamp")));
+                                    requestBuilder.addValues(cursor.getString(cursor.getColumnIndex("data")));
+                                    requestBuilder.addAccuracy(0.0f);
 
-                                if (ids.size() == 400) {
-                                    try {
-                                        EtService.DefaultResponseMessage res = stub.submitDataRecords(requestBuilder.build());
-                                        if (res.getDoneSuccessfully())
-                                            for (int id : ids)
-                                                LocalDBManager.INSTANCE.deleteRecord(id);
-                                    } catch (StatusRuntimeException e) {
-                                        e.printStackTrace();
-                                        break;
+                                    if (ids.size() == 400) {
+                                        try {
+                                            EtService.DefaultResponseMessage res = stub.submitDataRecords(requestBuilder.build());
+                                            if (res.getDoneSuccessfully())
+                                                for (int id : ids)
+                                                    LocalDBManager.INSTANCE.deleteRecord(id);
+                                        } catch (StatusRuntimeException e) {
+                                            e.printStackTrace();
+                                            break;
+                                        }
+
+                                        requestBuilder = EtService.SubmitDataRecordsRequestMessage.newBuilder()
+                                                .setUserId(userId)
+                                                .setEmail(email);
+                                        ids.clear();
                                     }
-
-                                    requestBuilder = EtService.SubmitDataRecordsRequestMessage.newBuilder()
-                                            .setUserId(userId)
-                                            .setEmail(email);
-                                    ids.clear();
+                                } while (cursor.moveToNext());
+                            if (ids.size() > 0) {
+                                try {
+                                    EtService.DefaultResponseMessage res = stub.submitDataRecords(requestBuilder.build());
+                                    if (res.getDoneSuccessfully())
+                                        for (int id : ids)
+                                            LocalDBManager.INSTANCE.deleteRecord(id);
+                                } catch (StatusRuntimeException e) {
+                                    e.printStackTrace();
+                                    break;
                                 }
-                            } while (cursor.moveToNext());
-                        if (ids.size() > 0) {
-                            try {
-                                EtService.DefaultResponseMessage res = stub.submitDataRecords(requestBuilder.build());
-                                if (res.getDoneSuccessfully())
-                                    for (int id : ids)
-                                        LocalDBManager.INSTANCE.deleteRecord(id);
-                            } catch (StatusRuntimeException e) {
-                                e.printStackTrace();
-                                break;
                             }
-                        }
-                        channel.shutdown();
-                        Log.e(TAG, "Data transferred to EasyTrack server!");
-                    } else
-                        Log.e(TAG, "Couldn't try to submit data because device isn't connected to a WiFi network!");
-                    try {
+                            channel.shutdown();
+                            Log.e(TAG, "Data transferred to EasyTrack server!");
+                        } else
+                            Log.e(TAG, "Couldn't try to submit data because device isn't connected to a WiFi network!");
                         Thread.sleep(60000);
-                    } catch (InterruptedException e) {
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
                 }
@@ -188,13 +201,15 @@ public class SAPAndroidAgent extends SAAgentV2 {
         switch (result) {
             case CONNECTION_SUCCESS:
                 mProviderServiceSocket = socket;
-                connectionListener.run(true);
+                if (connectionListener != null)
+                    connectionListener.run(true);
                 Toast.makeText(getApplicationContext(), "Gear connection is established", Toast.LENGTH_SHORT).show();
                 Log.e(TAG, "Gear S3 connection established");
                 break;
             case CONNECTION_ALREADY_EXIST:
                 mProviderServiceSocket = socket;
-                connectionListener.run(true);
+                if (connectionListener != null)
+                    connectionListener.run(true);
                 Toast.makeText(getApplicationContext(), "Gear connection already exists", Toast.LENGTH_SHORT).show();
                 Log.e(TAG, "Gear S3 connection established");
                 break;
