@@ -1,0 +1,2 @@
+rootProject.name='Stress Sensing Middleman'
+include ':app'
