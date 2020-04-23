@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.TextView;
@@ -57,6 +58,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             } else {
                 startSAPAgent();
+                startDataCollectionService();
             }
         }
     }
@@ -97,6 +99,7 @@ public class MainActivity extends AppCompatActivity {
                             editor.apply();
                             Toast.makeText(getApplicationContext(), "Successfully authorized and connected to the stress sensing campaign!", Toast.LENGTH_SHORT).show();
                             startSAPAgent();
+                            startDataCollectionService();
                         });
                         else runOnUiThread(() -> {
                             Calendar cal = Calendar.getInstance();
@@ -152,5 +155,13 @@ public class MainActivity extends AppCompatActivity {
                 Log.e(TAG, "Failed to get agent : code(" + errorCode + "), message(" + message + ")");
             }
         });
+    }
+
+    private void startDataCollectionService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(new Intent(getApplicationContext(), DataCollectorService.class));
+        } else {
+            startService(new Intent(getApplicationContext(), DataCollectorService.class));
+        }
     }
 }
