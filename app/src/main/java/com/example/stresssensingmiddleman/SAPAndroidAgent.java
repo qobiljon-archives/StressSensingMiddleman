@@ -15,9 +15,7 @@ import com.samsung.android.sdk.accessory.SAPeerAgent;
 import com.samsung.android.sdk.accessory.SASocket;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 
 import inha.nsl.easytrack.ETServiceGrpc;
 import inha.nsl.easytrack.EtService;
@@ -69,7 +67,7 @@ public class SAPAndroidAgent extends SAAgentV2 {
                             channel.shutdown();
                         }
                         Thread.sleep(20000);
-                    } catch (Exception e) {
+                    } catch (NullPointerException | InterruptedException e) {
                         Log.e(TAG, "SAPAndroidAgent: " + e.getMessage());
                         e.printStackTrace();
                     }
@@ -85,7 +83,7 @@ public class SAPAndroidAgent extends SAAgentV2 {
                             Log.e(TAG, "Request data from SmartWatch : " + sent);
                         }
                         Thread.sleep(90000);
-                    } catch (InterruptedException e) {
+                    } catch (InterruptedException | NullPointerException e) {
                         e.printStackTrace();
                     }
                 }
@@ -165,7 +163,7 @@ public class SAPAndroidAgent extends SAAgentV2 {
                         } else
                             Log.e(TAG, "Couldn't try to submit data because device isn't connected to a WiFi network!");
                         Thread.sleep(60000);
-                    } catch (Exception e) {
+                    } catch (NullPointerException | InterruptedException e) {
                         e.printStackTrace();
                     }
                 }
