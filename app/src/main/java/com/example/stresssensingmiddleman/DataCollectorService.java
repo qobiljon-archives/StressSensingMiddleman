@@ -34,6 +34,7 @@ import static com.example.stresssensingmiddleman.SAPAndroidAgent.mProviderServic
 
 public class DataCollectorService extends Service {
     private IBinder mBinder = new LocalBinder();
+    static boolean uploadingSuccessfully = true;
 
     private class LocalBinder extends Binder {
         DataCollectorService getService() {
@@ -121,6 +122,7 @@ public class DataCollectorService extends Service {
             while (runThreads) {
                 try {
                     if (isConnectedToWifi()) {
+                        uploadingSuccessfully = true;
                         String email = prefs.getString("email", null);
                         int userId = prefs.getInt("userId", -1);
                         ManagedChannel channel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort).usePlaintext().build();
@@ -154,7 +156,7 @@ public class DataCollectorService extends Service {
                                 requestBuilder.addValues(cursor.getString(cursor.getColumnIndex("data")));
                                 requestBuilder.addAccuracy(0.0f);
 
-                                if (ids.size() == 400) {
+                                if (ids.size() == 1000) {
                                     try {
                                         EtService.DefaultResponseMessage res = stub.submitDataRecords(requestBuilder.build());
                                         if (res.getDoneSuccessfully())
@@ -184,10 +186,13 @@ public class DataCollectorService extends Service {
                         }
                         channel.shutdown();
                         Log.e(TAG, "Data transferred to EasyTrack server!");
-                    } else
+                    } else {
                         Log.e(TAG, "Couldn't try to submit data because device isn't connected to a WiFi network!");
+                        uploadingSuccessfully = false;
+                    }
                     Thread.sleep(60000);
                 } catch (NullPointerException | InterruptedException e) {
+                    uploadingSuccessfully = false;
                     e.printStackTrace();
                 }
             }

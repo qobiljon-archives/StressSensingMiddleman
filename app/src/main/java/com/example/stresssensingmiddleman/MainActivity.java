@@ -7,10 +7,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -20,6 +23,7 @@ import java.util.Calendar;
 
 import inha.nsl.easytrack.ETServiceGrpc;
 import inha.nsl.easytrack.EtService;
+import inha.nsl.easytrack.library.LocalDBManager;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.StatusRuntimeException;
@@ -31,15 +35,39 @@ public class MainActivity extends AppCompatActivity {
 
     private SAPAndroidAgent sapAndroidAgent;
     private boolean connectedToWatch = false;
-    private TextView textView;
+    private TextView logTextView;
+    private ScrollView logScrollView;
+    private TextView btConnectionTextView;
+    private TextView sampleCountTextView;
+    private TextView uploadStatusTextView;
+    private boolean mainActivityRunning = false;
+    private Thread observerThread;
+    private boolean runThreads = true;
 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        mainActivityRunning = true;
 
-        textView = findViewById(R.id.textView);
+        logTextView = findViewById(R.id.logTextView);
+        logScrollView = findViewById(R.id.logScrollView);
+        btConnectionTextView = findViewById(R.id.btConnectionTextView);
+        sampleCountTextView = findViewById(R.id.sampleCountTextView);
+        uploadStatusTextView = findViewById(R.id.uploadStatusTextView);
+        ServiceConnection.setOnReceiveListener(sampleCount -> {
+            /*if (mainActivityRunning) {
+                logTextView.append("Received " + sampleCount + " samples from the watch");
+                if (logTextView.getLineCount() > 200) {
+                    String text = logTextView.getText().toString();
+                    for (int n = 0; n < 100 && text.contains("\n"); n++)
+                        text = text.substring(text.indexOf("\n") + 1);
+                    logTextView.setText(text);
+                }
+            }*/
+        });
+        logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN));
 
         if (authAppIsNotInstalled()) {
             Toast.makeText(this, "Please install this app and reopen the application!", Toast.LENGTH_SHORT).show();
@@ -61,6 +89,43 @@ public class MainActivity extends AppCompatActivity {
                 startDataCollectionService();
             }
         }
+
+        runThreads = true;
+        observerThread = new Thread(() -> {
+            while (runThreads) {
+                runOnUiThread(() -> {
+                    if (ServiceConnection.serviceConnectionAvailable) {
+                        btConnectionTextView.setText("ON");
+                        btConnectionTextView.setTextColor(Color.GREEN);
+                    } else {
+                        btConnectionTextView.setText("OFF");
+                        btConnectionTextView.setTextColor(Color.RED);
+                    }
+
+                    int count;
+                    try {
+                        count = LocalDBManager.INSTANCE.countSamples();
+                    } catch (Exception e) {
+                        count = 0;
+                    }
+                    sampleCountTextView.setText(String.valueOf(count));
+
+                    if (DataCollectorService.uploadingSuccessfully) {
+                        uploadStatusTextView.setText("ON");
+                        uploadStatusTextView.setTextColor(Color.GREEN);
+                    } else {
+                        uploadStatusTextView.setText("OFF");
+                        uploadStatusTextView.setTextColor(Color.RED);
+                    }
+                });
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        });
+        observerThread.start();
     }
 
     @Override
@@ -68,6 +133,14 @@ public class MainActivity extends AppCompatActivity {
         if (connectedToWatch) {
             sapAndroidAgent.releaseAgent();
             connectedToWatch = false;
+            mainActivityRunning = false;
+        }
+        runThreads = false;
+        try {
+            observerThread.interrupt();
+            observerThread.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
         super.onDestroy();
     }
@@ -134,24 +207,24 @@ public class MainActivity extends AppCompatActivity {
             public void onAgentAvailable(SAAgentV2 agent) {
                 if (agent != null) {
                     sapAndroidAgent = (SAPAndroidAgent) agent;
-                    textView.append("Ready to accept connection =)\n");
+                    logTextView.append("Ready to accept connection =)\n");
                     sapAndroidAgent.setConnectionListener((boolean connectedToSmartwatch) -> {
                         MainActivity.this.connectedToWatch = connectedToSmartwatch;
                         if (connectedToWatch)
                             try {
-                                textView.append("Device connected =)\n");
+                                logTextView.append("Device connected =)\n");
                             } catch (Exception e) {
                                 e.printStackTrace();
                             }
                     });
                 } else {
-                    textView.append("Agent unavailable =(\n");
+                    logTextView.append("Agent unavailable =(\n");
                 }
             }
 
             @Override
             public void onError(int errorCode, String message) {
-                textView.append("Failed to get agent =(");
+                logTextView.append("Failed to get agent =(");
                 Log.e(TAG, "Failed to get agent : code(" + errorCode + "), message(" + message + ")");
             }
         });

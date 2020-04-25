@@ -12,13 +12,18 @@ import inha.nsl.easytrack.library.LocalDBManager;
 import static com.example.stresssensingmiddleman.MainActivity.TAG;
 
 public class ServiceConnection extends SASocket {
+    private static OnReceiveListener onReceiveListener;
+    static boolean serviceConnectionAvailable = false;
+
     public ServiceConnection() {
         super(ServiceConnection.class.getName());
         Log.e(TAG, "ServiceConnection created");
+        serviceConnectionAvailable = true;
     }
 
     @Override
     public void onReceive(int channelId, byte[] bytes) {
+        serviceConnectionAvailable = true;
         String[] lines = new String(bytes, StandardCharsets.UTF_8).split("\n");
         for (String line : lines) {
             String[] elements = line.split(",");
@@ -32,17 +37,34 @@ public class ServiceConnection extends SASocket {
             if (values.length() > 0)
                 values.replace(values.length() - 1, values.length(), "");
             LocalDBManager.INSTANCE.saveMixedData(dataSource, timestamp, 0.0f, values);
+            if (onReceiveListener != null)
+                try {
+                    int samplesCount = Math.max(lines.length - 1, 0);
+                    if (samplesCount > 0)
+                        onReceiveListener.onReceive(samplesCount);
+                } catch (Exception e) {
+                    Log.i(TAG, "onReceiveListener error : " + e.getMessage());
+                }
         }
-        Log.e(TAG, "Received data from smartwatch (" + Math.max(lines.length - 1, 0) + " samples)");
     }
 
     @Override
     public void onError(int channelId, String errorMessage, int errorCode) {
+        serviceConnectionAvailable = false;
         Log.e(TAG, "Error : channel(" + channelId + "), errorCode(" + errorCode + "), message(" + errorMessage + ")");
     }
 
     @Override
     protected void onServiceConnectionLost(int errorCode) {
+        serviceConnectionAvailable = false;
         Log.e(TAG, "Service connection lost, errorCode : " + errorCode);
+    }
+
+    static void setOnReceiveListener(OnReceiveListener onReceiveListener) {
+        ServiceConnection.onReceiveListener = onReceiveListener;
+    }
+
+    interface OnReceiveListener {
+        void onReceive(int sampleCount);
     }
 }
